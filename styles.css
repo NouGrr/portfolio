@@ -161,7 +161,8 @@ h2 { font-size: clamp(32px, 4.2vw, 54px); letter-spacing: -.035em; line-height: 
   overflow: hidden; position: relative;
   transition: transform .4s cubic-bezier(.2,.7,.2,1), border-color .4s, box-shadow .4s;
 }
-.card:hover { transform: translateY(-6px); border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 24px 60px -24px color-mix(in srgb, var(--accent) 35%, transparent); }
+.card { transform: perspective(1100px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--lift, 0px)); }
+.card:hover { --lift: -6px; border-color: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 24px 60px -24px color-mix(in srgb, var(--accent) 35%, transparent); }
 .card[hidden] { display: none; }
 .card-wide { grid-column: 1 / -1; flex-direction: row; }
 .card-wide .card-art { flex: 1 1 52%; height: auto; min-height: 360px; border-bottom: 0; border-right: 1px solid var(--line); }
@@ -248,6 +249,50 @@ h2 { font-size: clamp(32px, 4.2vw, 54px); letter-spacing: -.035em; line-height: 
 /* ---------- Reveal ---------- */
 .js .reveal { opacity: 0; translate: 0 26px; transition: opacity .8s cubic-bezier(.2,.7,.2,1), translate .8s cubic-bezier(.2,.7,.2,1), transform .4s cubic-bezier(.2,.7,.2,1), border-color .4s, box-shadow .4s; }
 .js .reveal.is-visible { opacity: 1; translate: 0 0; }
+
+/* ---------- Effets curseur ---------- */
+.cursor-glow, .cursor-dot, .cursor-ring { display: none; }
+.has-cursor .cursor-glow {
+  display: block; position: fixed; left: 0; top: 0; z-index: -1; pointer-events: none;
+  width: 720px; height: 720px; margin: -360px 0 0 -360px; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--brand) 16%, transparent), color-mix(in srgb, var(--brand-2) 6%, transparent) 40%, transparent 68%);
+  opacity: 0; transition: opacity .6s; will-change: transform;
+}
+.has-cursor .cursor-dot, .has-cursor .cursor-ring {
+  display: block; position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; border-radius: 50%;
+  opacity: 0; transition: opacity .3s, width .25s, height .25s, margin .25s, background-color .25s, border-color .25s;
+  will-change: transform;
+}
+.has-cursor .cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--brand); }
+.has-cursor .cursor-ring { width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 1px solid color-mix(in srgb, var(--brand) 60%, transparent); }
+.cursor-active .cursor-glow { opacity: 1; }
+.cursor-active .cursor-dot, .cursor-active .cursor-ring { opacity: 1; }
+.cursor-hover .cursor-ring { width: 60px; height: 60px; margin: -30px 0 0 -30px; background: color-mix(in srgb, var(--brand) 12%, transparent); border-color: var(--brand); }
+.cursor-hover .cursor-dot { opacity: 0; }
+.cursor-down .cursor-ring { width: 26px; height: 26px; margin: -13px 0 0 -13px; }
+
+/* Halo qui suit la souris dans les cartes */
+.card::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent) 13%, transparent), transparent 60%);
+  opacity: 0; transition: opacity .4s;
+}
+.card::before {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; padding: 1px;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), var(--accent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .4s;
+}
+.has-cursor .card:hover::after, .has-cursor .card:hover::before { opacity: 1; }
+.card-art svg { translate: var(--px, 0px) var(--py, 0px); }
+.js .reveal.card.is-tilting { transition: opacity .8s, translate .8s, transform .12s linear, border-color .4s, box-shadow .4s; }
+.card.is-tilting .card-art svg { transition: transform .6s cubic-bezier(.2,.7,.2,1), translate .15s linear; }
+.card-art svg { transition: transform .6s cubic-bezier(.2,.7,.2,1), translate .5s cubic-bezier(.2,.7,.2,1); }
+
+/* Boutons magnétiques */
+.magnetic { translate: var(--tx, 0px) var(--ty, 0px); transition: translate .5s cubic-bezier(.2,.7,.2,1), transform .2s, background-color .2s, border-color .2s, color .2s; }
+.magnetic.is-pulled { transition: translate .1s linear, transform .2s, background-color .2s, border-color .2s, color .2s; }
 
 @keyframes pulse { 50% { opacity: .45; } }
 @keyframes float { 50% { translate: 0 -6px; } }
