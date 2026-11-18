@@ -180,6 +180,13 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
 .release-name { font: 800 54px/.9 var(--display); font-stretch: 62%; text-transform: uppercase; }
 .release-meta { display: flex; justify-content: space-between; font: 12px var(--mono); }
 
+.badge-link { display: block; border-radius: 50%; transition: scale .5s var(--ease), background-color .3s; }
+.badge-link:hover { scale: 1.08; background: var(--lime); }
+.badge-link:hover .badge text { fill: var(--lime-ink); }
+.badge-link:hover .badge-arrow { stroke: var(--lime-ink); }
+.badge-link:hover .badge-arrow { translate: 0 6px; }
+.badge-link:focus-visible { outline-offset: 6px; border-radius: 50%; }
+.badge-arrow { transition: translate .4s var(--ease); }
 .badge { width: 130px; height: 130px; animation: spin 16s linear infinite; }
 .badge text { font: 600 15.5px var(--mono); letter-spacing: 2.6px; fill: var(--text); text-transform: uppercase; }
 .badge-arrow { fill: none; stroke: var(--text); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; animation: spin 16s linear infinite reverse; transform-origin: 100px 100px; }
@@ -335,6 +342,33 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
 @keyframes pd-in { from { opacity: 0; translate: 0 40px; scale: .97; } }
 
 
+/* ---------- À propos ---------- */
+.about-title { position: relative; }
+.about-title .about-script {
+  position: absolute; left: 52%; top: 8%; display: inline-block; font-size: .3em; font-stretch: 100%;
+  text-transform: none; letter-spacing: 0; line-height: 1; white-space: nowrap;
+  background: var(--lime); color: var(--lime-ink); padding: 0 .3em .1em; border-radius: .2em; rotate: -6deg;
+}
+.about-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(32px, 5vw, 80px); align-items: start; }
+.about-text p { font-size: 18px; color: var(--muted); margin-bottom: 16px; max-width: 620px; }
+.about-text strong { color: var(--text); font-weight: 600; }
+.about-text .about-lead { font: 700 clamp(26px, 3vw, 42px)/1.12 var(--display); font-stretch: 85%; letter-spacing: -.01em; color: var(--text); margin-bottom: 26px; }
+.about-cta { margin-top: 14px; }
+.about-card {
+  position: relative; overflow: hidden; padding: 26px 28px 10px; border-radius: var(--radius);
+  background: radial-gradient(#f1efe412 1px, transparent 1px) 0 0 / 12px 12px, var(--green); color: var(--cream);
+  transition: rotate .6s var(--ease), translate .6s var(--ease);
+}
+.about-card:hover { rotate: -1deg; translate: 0 -4px; }
+.about-card .label { color: var(--cream); }
+.about-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.about-card-id { font: 600 12px var(--mono); color: var(--lime); }
+.about-facts { margin: 0; }
+.about-facts div { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 16px 0; border-top: 1px solid #f1efe41f; }
+.about-facts dt { font: 12px var(--mono); color: #b4b7a4; padding-top: 3px; }
+.about-facts dd { margin: 0; font-size: 17px; font-weight: 500; }
+.about-facts div:hover dd { color: var(--lime); }
+
 /* ---------- Approche ---------- */
 .statement {
   font: 700 clamp(30px, 4.6vw, 70px)/1.08 var(--display); font-stretch: 85%; letter-spacing: -.02em;
@@ -439,8 +473,9 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
 /* ---------- Responsive ---------- */
 @media (max-width: 1050px) {
   .hero-bottom { grid-template-columns: 1fr auto; }
-  .badge { display: none; }
+  .badge-link { display: none; }
   .principles { grid-template-columns: 1fr 1fr; row-gap: 36px; }
+  .about-grid { grid-template-columns: 1fr; }
   .hof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-dialog[open] { grid-template-columns: 1fr; }
   .pd-art { margin: 12px 12px 0; min-height: 0; height: 260px; }
@@ -465,6 +500,8 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
   .footer { border-radius: 28px 28px 0 0; }
   .footer-script { left: 26%; top: 18%; }
   .coords { grid-template-columns: 1fr; }
+  .about-facts div { grid-template-columns: 1fr; gap: 4px; }
+  .about-title .about-script { left: 40%; }
   .blob-1 { width: 200px; right: -80px; }
 }
 @media (prefers-reduced-motion: reduce) {
