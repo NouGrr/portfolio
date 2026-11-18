@@ -2,7 +2,7 @@
 
 **[nougrr.github.io/portfolio](https://nougrr.github.io/portfolio/)**
 
-Portfolio personnel de développeur web. Il présente mes projets récents : la suite d'outils NEXO, une plateforme e-sport full-stack et le site d'une association.
+Portfolio personnel de développeur web. Il présente mes projets récents et ceux dont je suis le plus fier : la suite d'outils NEXO, une plateforme e-sport full-stack et le site d'une association.
 
 ## Projets présentés
 
