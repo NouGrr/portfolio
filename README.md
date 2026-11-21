@@ -15,7 +15,7 @@ Portfolio personnel de développeur web. Il présente mes projets récents et ce
 | **Converxo** | Convertisseur de fichiers privé | [App](https://nougrr.github.io/converxo/) · [Code](https://github.com/NouGrr/converxo) |
 | **Mockxo** | Studio 3D de mockups | [App](https://nougrr.github.io/mockxo/) · [Code](https://github.com/NouGrr/mockxo) |
 | **GameHub Arena** | Tournois e-sport et recherche de coéquipiers (projet d'équipe ESI) | [Code](https://github.com/NouGrr/GH-Project) |
-| **L'Atelier des Liens** | Site vitrine d'une association intergénérationnelle | [Site](https://nougrr.github.io/atelier-des-liens/) · [Code](https://github.com/NouGrr/atelier-des-liens) |
+| **L'Atelier des Liens** | Site vitrine d'une association intergénérationnelle | [Site](https://atelierdesliens-bening.fr/) · [Code](https://github.com/NouGrr/atelier-des-liens) |
 
 ## Fonctionnalités
 
