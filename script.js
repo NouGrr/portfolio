@@ -3,18 +3,52 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 const mouse = { x: innerWidth / 2, y: innerHeight * 0.4, moved: false, t: 0 };
 
-/* ---------- Mode allégé ----------
-   Petites configurations : on démarre directement en mode allégé.
-   Sinon on surveille la cadence et on bascule si elle s'effondre. */
-let lite = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
-const liteListeners = [];
-const setLite = () => {
-  if (root.classList.contains('perf-lite')) return;
-  lite = true;
-  root.classList.add('perf-lite');
-  liteListeners.forEach((fn) => fn());
+/* ---------- Niveaux de performance ----------
+   0 = complet, 1 = allégé, 2 = minimal.
+   - on part du niveau mémorisé à la visite précédente ;
+   - les petites configurations démarrent en allégé ;
+   - un affichage sans accélération graphique démarre en minimal ;
+   - pendant la visite, on descend d'un cran dès que la cadence s'effondre. */
+const softwareGpu = (() => {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl', { failIfMajorPerformanceCaveat: true });
+    if (!gl) return true; // WebGL refusé faute d'accélération matérielle
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+  } catch (e) { return false; }
+})();
+let tier = 0;
+// niveau retenu 7 jours : un ralentissement passager ne bride pas un bon PC indéfiniment
+const TIER_TTL = 7 * 24 * 3600e3;
+const saveTier = () => { try { localStorage.setItem('perf-tier', `${tier}:${Date.now()}`); } catch (e) {} };
+try {
+  const [t, at] = (localStorage.getItem('perf-tier') || '').split(':');
+  if (Date.now() - at < TIER_TTL) tier = Math.min(2, +t || 0);
+} catch (e) {}
+const cores = navigator.hardwareConcurrency || 8, memory = navigator.deviceMemory || 8;
+if (cores <= 4 || memory <= 4 || navigator.connection?.saveData) tier = Math.max(tier, 1);
+if (softwareGpu || memory <= 2 || cores <= 2) tier = 2;
+const tierListeners = [];
+const applyTierClasses = () => {
+  root.classList.toggle('perf-lite', tier >= 1);
+  root.classList.toggle('perf-min', tier >= 2);
 };
-if (lite) root.classList.add('perf-lite');
+const setTier = (t) => {
+  if (t <= tier) return;
+  tier = t;
+  applyTierClasses();
+  saveTier();
+  tierListeners.forEach((fn) => fn());
+};
+applyTierClasses();
+
+/* Animations CSS mises en pause hors écran (elles continuaient de tourner pour rien) */
+const animIo = new IntersectionObserver((entries) => {
+  entries.forEach((e) => e.target.classList.toggle('anim-off', !e.isIntersecting));
+}, { rootMargin: '100px 0px' });
+document.querySelectorAll('section, .hof-item, .footer').forEach((el) => animIo.observe(el));
 
 /* Visibilité des blocs animés : on ne calcule rien pour ce qui est hors écran */
 const visIo = new IntersectionObserver((entries) => {
@@ -165,8 +199,14 @@ const bg = (() => {
     return noise(wx + t * 0.12, wy) * 0.62 + noise(wx * 2.1 + 5.2 - t * 0.2, wy * 2.1 + 1.3) * 0.28 + noise(wx * 4.3, wy * 4.3 + t * 0.3) * 0.1;
   };
 
-  // Réglages de qualité : le mode allégé grossit la grille et recalcule moins souvent
-  let cell = 12, every = 2, dprMax = 1.5, glows = 2;
+  // Réglages de qualité selon le niveau : grille plus grosse, recalculs plus rares,
+  // demi-cadence en allégé ; en minimal le fond est dessiné une fois et reste fixe
+  let cell = 14, every = 3, dprMax = 1.5, glows = 2, skip = 1, still = false, dirty = true;
+  const quality = () => {
+    if (tier >= 2) { cell = 16; dprMax = 1; glows = 0; still = true; }
+    else if (tier >= 1) { cell = 18; every = 2; dprMax = 1; glows = 1; skip = 2; }
+  };
+  quality();
   let cols = 0, rows = 0, values = new Float32Array(0);
   const levels = 16;
   const thresholds = Array.from({ length: levels - 1 }, (_, k) => 0.15 + ((k + 1) / levels) * 0.7);
@@ -225,20 +265,26 @@ const bg = (() => {
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     cols = Math.ceil(w / cell) + 2; rows = Math.ceil(h / cell) + 3;
     values = new Float32Array(cols * rows);
-    path = null;
+    path = null; dirty = true;
   };
-  const applyLite = () => { cell = 18; every = 3; dprMax = 1; glows = 1; resize(); };
-  if (lite) { cell = 18; every = 3; dprMax = 1; glows = 1; }
-  liteListeners.push(applyLite);
+  tierListeners.push(() => { quality(); resize(); });
 
   // Traînée de la lueur
   const trail = Array.from({ length: 5 }, () => ({ x: mouse.x, y: mouse.y }));
   let energy = 0, prevX = mouse.x, prevY = mouse.y, frameCount = 0;
 
   const draw = (time) => {
-    const t = time / 1000 * 0.25;
-    // les lignes défilent à 35 % de la vitesse de la page (parallaxe)
-    if (!path || frameCount++ % every === 0) path = buildPath(t, scrollY * 0.35);
+    if (still) {
+      if (!dirty) return;
+      dirty = false;
+      path = buildPath(0, 0);
+    } else {
+      frameCount++;
+      if (frameCount % skip) return; // demi-cadence en mode allégé
+      const t = time / 1000 * 0.25;
+      // les lignes défilent à 35 % de la vitesse de la page (parallaxe)
+      if (!path || (frameCount / skip) % every === 0) path = buildPath(t, scrollY * 0.35);
+    }
 
     if (!finePointer || !mouse.moved) {
       mouse.x = w * (0.5 + 0.32 * Math.sin(time / 4200));
@@ -278,12 +324,13 @@ const bg = (() => {
     ctx.globalAlpha = 1;
   };
 
+  const recolor = () => { readColors(); dirty = true; };
   readColors();
   resize();
   let rt;
   addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resize, 150); });
-  new MutationObserver(readColors).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(recolor).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', recolor);
   return { draw };
 })();
 
@@ -319,7 +366,8 @@ document.querySelectorAll('[data-flex]').forEach((el) => {
 });
 const heroTitle = watch(document.querySelector('.mega'));
 let flexSettled = true;
-const flexActive = () => finePointer && mouse.moved && heroTitle._vis && !(flexSettled && performance.now() - mouse.t > 100);
+// coupé dès le mode allégé : changer la largeur des lettres oblige à recomposer tout le titre
+const flexActive = () => tier === 0 && finePointer && mouse.moved && heroTitle._vis && !(flexSettled && performance.now() - mouse.t > 100);
 // lecture groupée des positions (une seule mise en page par image)
 const readFlex = () => {
   const hr = heroTitle.getBoundingClientRect();
@@ -402,16 +450,17 @@ readMarquee();
 addEventListener('resize', readMarquee);
 document.fonts?.ready.then(() => { readMarquee(); readHofCols(); });
 
-// surveillance de la cadence : bascule en mode allégé si trop d'images sont lentes
-let lastTime = 0, samples = 0, slow = 0;
+// surveillance de la cadence : on descend d'un niveau quand trop d'images sont lentes
+// (on attend la fin du chargement, qui est toujours un peu chargé)
+let lastTime = 0, samples = 0, slow = 0, monitorFrom = performance.now() + 2000;
 const monitor = (time) => {
   const dt = time - lastTime;
   lastTime = time;
-  if (lite || dt <= 0 || dt > 250) return; // onglet en arrière-plan : on ignore
+  if (tier >= 2 || time < monitorFrom || dt <= 0 || dt > 250) return; // onglet en arrière-plan : on ignore
   samples++;
-  if (dt > 24) slow++;
-  if (samples >= 120) {
-    if (slow > 45) setLite();
+  if (dt > 22) slow++;
+  if (samples >= 60) {
+    if (slow > 20) { setTier(tier + 1); monitorFrom = time + 1000; }
     samples = slow = 0;
   }
 };
@@ -456,7 +505,7 @@ const frame = (time) => {
     fTrack.style.transform = `translate3d(${fX.toFixed(1)}px,0,0)`;
   }
 
-  if (hr) updateRows(hr);
+  if (hr && tier < 2) updateRows(hr);
   if (reach) writeFlex(reach);
   fillTexts.forEach((f, i) => { if (fillTops[i] !== null) writeFill(f, fillTops[i]); });
 

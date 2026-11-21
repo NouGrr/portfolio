@@ -631,3 +631,16 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
 .perf-lite .project-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; background: #0b0d07e6; }
 .perf-lite .footer-topo, .perf-lite .footer-mark { animation: none !important; }
 .perf-lite .footer-script { text-shadow: none; }
+
+/* Animations décoratives en pause hors écran et derrière la fiche projet */
+.anim-off, .anim-off * { animation-play-state: paused !important; }
+.dialog-open main * { animation-play-state: paused !important; }
+
+/* ---------- Mode minimal (machines très modestes / sans accélération graphique) ----------
+   Fond dessiné une seule fois, plus aucune animation en boucle, pas de calques superflus.
+   Les apparitions au défilement et les survols restent. */
+.perf-min .dot, .perf-min .badge, .perf-min .badge-arrow, .perf-min .stroke-dash,
+.perf-min .nodes g, .perf-min .playhead, .perf-min .cube { animation: none !important; }
+.perf-min .hof-item { will-change: auto; transform: none !important; }
+.perf-min .footer-script, .perf-min .hero-script { text-shadow: none; }
+.perf-min .statement .w.hl.on { box-shadow: none; }
