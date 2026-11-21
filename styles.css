@@ -635,6 +635,8 @@ mark { background: var(--lime); color: var(--lime-ink); padding: 0 .2em; border-
 /* Animations décoratives en pause hors écran et derrière la fiche projet */
 .anim-off, .anim-off * { animation-play-state: paused !important; }
 .dialog-open main * { animation-play-state: paused !important; }
+/* …sauf la fiche projet elle-même (elle est dans <main>) : sinon son apparition reste figée à opacity 0 */
+.dialog-open .project-dialog, .dialog-open .project-dialog * { animation-play-state: running !important; }
 
 /* ---------- Mode minimal (machines très modestes / sans accélération graphique) ----------
    Fond dessiné une seule fois, plus aucune animation en boucle, pas de calques superflus.
