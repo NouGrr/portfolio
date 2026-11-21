@@ -1,7 +1,26 @@
 const root = document.documentElement;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
-const mouse = { x: innerWidth / 2, y: innerHeight * 0.4, moved: false };
+const mouse = { x: innerWidth / 2, y: innerHeight * 0.4, moved: false, t: 0 };
+
+/* ---------- Mode allégé ----------
+   Petites configurations : on démarre directement en mode allégé.
+   Sinon on surveille la cadence et on bascule si elle s'effondre. */
+let lite = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+const liteListeners = [];
+const setLite = () => {
+  if (root.classList.contains('perf-lite')) return;
+  lite = true;
+  root.classList.add('perf-lite');
+  liteListeners.forEach((fn) => fn());
+};
+if (lite) root.classList.add('perf-lite');
+
+/* Visibilité des blocs animés : on ne calcule rien pour ce qui est hors écran */
+const visIo = new IntersectionObserver((entries) => {
+  entries.forEach((e) => { e.target._vis = e.isIntersecting; });
+}, { rootMargin: '200px 0px' });
+const watch = (el) => { if (el) { el._vis = false; visIo.observe(el); } return el; };
 
 /* ---------- Thème ---------- */
 document.querySelector('.theme-toggle').addEventListener('click', () => {
@@ -48,7 +67,32 @@ const io = new IntersectionObserver((entries) => {
     }
   });
 }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-document.querySelectorAll('.reveal, .footer, .hof-title').forEach((el) => io.observe(el));
+document.querySelectorAll('.reveal, .hof-title').forEach((el) => io.observe(el));
+
+/* Contact : la signature se trace et les lignes se dévoilent quand le bloc est bien à l'écran */
+const footer = document.querySelector('.footer');
+const footerIo = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add('is-visible');
+    footerIo.unobserve(entry.target);
+  });
+}, { threshold: 0.3 });
+document.querySelectorAll('.footer-panel, .footer-col').forEach((el) => footerIo.observe(el));
+document.querySelectorAll('.footer-col').forEach((col) => {
+  [...col.children].forEach((el, i) => el.style.setProperty('--i', i));
+});
+
+/* Survol des liens du pied de page : les lettres défilent une à une vers le haut
+   et une copie colorée remonte par en dessous */
+document.querySelectorAll('.footer-col a').forEach((a) => {
+  const text = a.textContent.trim();
+  a.setAttribute('aria-label', text);
+  a.innerHTML = `<span class="roll" aria-hidden="true">${[...text].map((ch, i) =>
+    `<span class="ch" style="--c:${i}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('')}</span>`;
+});
+// le relief du pied de page n'anime que lorsqu'il est visible
+new IntersectionObserver(([e]) => footer.classList.toggle('in-view', e.isIntersecting)).observe(footer);
 
 /* ---------- Lien de navigation actif ---------- */
 const navLinks = [...document.querySelectorAll('.nav a')];
@@ -121,9 +165,11 @@ const bg = (() => {
     return noise(wx + t * 0.12, wy) * 0.62 + noise(wx * 2.1 + 5.2 - t * 0.2, wy * 2.1 + 1.3) * 0.28 + noise(wx * 4.3, wy * 4.3 + t * 0.3) * 0.1;
   };
 
-  const cell = 12;
+  // Réglages de qualité : le mode allégé grossit la grille et recalcule moins souvent
+  let cell = 12, every = 2, dprMax = 1.5, glows = 2;
   let cols = 0, rows = 0, values = new Float32Array(0);
   const levels = 16;
+  const thresholds = Array.from({ length: levels - 1 }, (_, k) => 0.15 + ((k + 1) / levels) * 0.7);
 
   const buildPath = (t, offsetY) => {
     const scale = 1 / 260;
@@ -131,34 +177,35 @@ const bg = (() => {
     const fy = Math.floor(oy);
     const shift = (oy - fy) * cell; // décalage sub-cellule pour un défilement fluide
     for (let j = 0; j < rows; j++) {
-      for (let i = 0; i < cols; i++) {
-        values[j * cols + i] = field(i * cell * scale, (j + fy) * cell * scale, t);
-      }
+      const row = j * cols, fyv = (j + fy) * cell * scale;
+      for (let i = 0; i < cols; i++) values[row + i] = field(i * cell * scale, fyv, t);
     }
+    // Marching squares, sans aucune allocation dans la boucle
     const path = new Path2D();
-    for (let l = 1; l < levels; l++) {
-      const th = 0.15 + (l / levels) * 0.7;
+    for (let l = 0; l < thresholds.length; l++) {
+      const th = thresholds[l];
       for (let j = 0; j < rows - 1; j++) {
+        const r0 = j * cols, r1 = r0 + cols;
+        const y = j * cell - shift, y2 = y + cell;
         for (let i = 0; i < cols - 1; i++) {
-          const a = values[j * cols + i], b = values[j * cols + i + 1];
-          const c = values[(j + 1) * cols + i + 1], d = values[(j + 1) * cols + i];
+          const a = values[r0 + i], b = values[r0 + i + 1];
+          const c = values[r1 + i + 1], d = values[r1 + i];
           const idx = (a > th) | ((b > th) << 1) | ((c > th) << 2) | ((d > th) << 3);
           if (idx === 0 || idx === 15) continue;
-          const x = i * cell, y = j * cell - shift;
-          const top = [x + cell * (th - a) / (b - a), y];
-          const right = [x + cell, y + cell * (th - b) / (c - b)];
-          const bottom = [x + cell * (th - d) / (c - d), y + cell];
-          const left = [x, y + cell * (th - a) / (d - a)];
-          const seg = (p, q) => { path.moveTo(p[0], p[1]); path.lineTo(q[0], q[1]); };
+          const x = i * cell, x2 = x + cell;
           switch (idx) {
-            case 1: case 14: seg(left, top); break;
-            case 2: case 13: seg(top, right); break;
-            case 3: case 12: seg(left, right); break;
-            case 4: case 11: seg(right, bottom); break;
-            case 6: case 9: seg(top, bottom); break;
-            case 7: case 8: seg(left, bottom); break;
-            case 5: seg(left, top); seg(right, bottom); break;
-            case 10: seg(top, right); seg(left, bottom); break;
+            case 1: case 14: path.moveTo(x, y + cell * (th - a) / (d - a)); path.lineTo(x + cell * (th - a) / (b - a), y); break;
+            case 2: case 13: path.moveTo(x + cell * (th - a) / (b - a), y); path.lineTo(x2, y + cell * (th - b) / (c - b)); break;
+            case 3: case 12: path.moveTo(x, y + cell * (th - a) / (d - a)); path.lineTo(x2, y + cell * (th - b) / (c - b)); break;
+            case 4: case 11: path.moveTo(x2, y + cell * (th - b) / (c - b)); path.lineTo(x + cell * (th - d) / (c - d), y2); break;
+            case 6: case 9: path.moveTo(x + cell * (th - a) / (b - a), y); path.lineTo(x + cell * (th - d) / (c - d), y2); break;
+            case 7: case 8: path.moveTo(x, y + cell * (th - a) / (d - a)); path.lineTo(x + cell * (th - d) / (c - d), y2); break;
+            case 5:
+              path.moveTo(x, y + cell * (th - a) / (d - a)); path.lineTo(x + cell * (th - a) / (b - a), y);
+              path.moveTo(x2, y + cell * (th - b) / (c - b)); path.lineTo(x + cell * (th - d) / (c - d), y2); break;
+            case 10:
+              path.moveTo(x + cell * (th - a) / (b - a), y); path.lineTo(x2, y + cell * (th - b) / (c - b));
+              path.moveTo(x, y + cell * (th - a) / (d - a)); path.lineTo(x + cell * (th - d) / (c - d), y2); break;
           }
         }
       }
@@ -171,22 +218,27 @@ const bg = (() => {
     lineColor = s.getPropertyValue('--bg-line').trim() || lineColor;
     glowColor = s.getPropertyValue('--bg-glow').trim() || glowColor;
   };
+  let path = null;
   const resize = () => {
-    dpr = Math.min(devicePixelRatio || 1, 2);
+    dpr = Math.min(devicePixelRatio || 1, dprMax);
     w = innerWidth; h = innerHeight;
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     cols = Math.ceil(w / cell) + 2; rows = Math.ceil(h / cell) + 3;
     values = new Float32Array(cols * rows);
+    path = null;
   };
+  const applyLite = () => { cell = 18; every = 3; dprMax = 1; glows = 1; resize(); };
+  if (lite) { cell = 18; every = 3; dprMax = 1; glows = 1; }
+  liteListeners.push(applyLite);
 
   // Traînée de la lueur
   const trail = Array.from({ length: 5 }, () => ({ x: mouse.x, y: mouse.y }));
-  let energy = 0, prev = { x: mouse.x, y: mouse.y }, path = null, frameCount = 0;
+  let energy = 0, prevX = mouse.x, prevY = mouse.y, frameCount = 0;
 
   const draw = (time) => {
     const t = time / 1000 * 0.25;
     // les lignes défilent à 35 % de la vitesse de la page (parallaxe)
-    if (!path || frameCount++ % 2 === 0) path = buildPath(t, scrollY * 0.35);
+    if (!path || frameCount++ % every === 0) path = buildPath(t, scrollY * 0.35);
 
     if (!finePointer || !mouse.moved) {
       mouse.x = w * (0.5 + 0.32 * Math.sin(time / 4200));
@@ -198,8 +250,8 @@ const bg = (() => {
       trail[i].x += (trail[i - 1].x - trail[i].x) * 0.3;
       trail[i].y += (trail[i - 1].y - trail[i].y) * 0.3;
     }
-    const speed = Math.hypot(mouse.x - prev.x, mouse.y - prev.y);
-    prev = { x: mouse.x, y: mouse.y };
+    const speed = Math.hypot(mouse.x - prevX, mouse.y - prevY);
+    prevX = mouse.x; prevY = mouse.y;
     energy += (Math.min(speed / 40, 1) - energy) * 0.08;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -213,8 +265,8 @@ const bg = (() => {
 
     // lueur : on retrace les lignes avec un dégradé radial centré sur la souris
     ctx.lineWidth = 1.6;
-    [0, trail.length - 1].forEach((i, k) => {
-      const p = trail[i];
+    for (let k = 0; k < glows; k++) {
+      const p = trail[k ? trail.length - 1 : 0];
       const r = (180 + energy * 140) * (k ? 0.7 : 1);
       const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
       g.addColorStop(0, glowColor);
@@ -222,34 +274,37 @@ const bg = (() => {
       ctx.globalAlpha = k ? 0.45 : 1;
       ctx.strokeStyle = g;
       ctx.stroke(path);
-    });
+    }
     ctx.globalAlpha = 1;
   };
 
   readColors();
   resize();
   let rt;
-  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { resize(); path = null; }, 150); });
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resize, 150); });
   new MutationObserver(readColors).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
   return { draw };
 })();
 
 /* ---------- Projets : colonnes qui défilent verticalement à des vitesses opposées ---------- */
-const hofGrid = document.querySelector('.hof-grid');
+const hofGrid = watch(document.querySelector('.hof-grid'));
 const hofItems = [...hofGrid.querySelectorAll('.hof-item')];
-let hofY = 0;
+let hofY = 0, hofWritten = NaN, hofCols = 1;
+// nombre de colonnes mis en cache : le lire à chaque image forçait un recalcul des styles
+const readHofCols = () => { hofCols = getComputedStyle(hofGrid).gridTemplateColumns.split(' ').length; hofWritten = NaN; };
+readHofCols();
+addEventListener('resize', readHofCols);
 
-const updateRows = () => {
-  if (reducedMotion) return;
-  const r = hofGrid.getBoundingClientRect();
+const updateRows = (r) => {
   // -1 quand la grille entre par le bas, +1 quand elle sort par le haut
   const p = Math.max(-1, Math.min(1, ((innerHeight - r.top) / (innerHeight + r.height)) * 2 - 1));
   hofY += (p - hofY) * 0.12;
-  const cols = getComputedStyle(hofGrid).gridTemplateColumns.split(' ').length;
-  const amp = cols > 2 ? 70 : 34;
+  if (Math.abs(hofY - hofWritten) < 0.0005) return; // déjà en place : aucune écriture
+  hofWritten = hofY;
+  const amp = hofCols > 2 ? 70 : 34;
   hofItems.forEach((item, i) => {
-    const dir = (i % cols) % 2 === 0 ? 1 : -1; // colonnes paires montent, impaires descendent
+    const dir = (i % hofCols) % 2 === 0 ? 1 : -1; // colonnes paires montent, impaires descendent
     item.style.transform = `translate3d(0, ${(dir * hofY * amp).toFixed(2)}px, 0)`;
   });
 };
@@ -260,33 +315,43 @@ const updateRows = () => {
 const flexChars = [];
 document.querySelectorAll('[data-flex]').forEach((el) => {
   el.innerHTML = [...el.textContent].map((ch) => `<span class="fx">${ch}</span>`).join('');
-  el.querySelectorAll('.fx').forEach((span) => flexChars.push({ el: span, w: 62, g: 800 }));
+  el.querySelectorAll('.fx').forEach((span) => flexChars.push({ el: span, w: 62, g: 800, cx: 0, cy: 0 }));
 });
-const heroTitle = document.querySelector('.mega');
-const updateFlex = () => {
-  if (!finePointer || !mouse.moved) return;
+const heroTitle = watch(document.querySelector('.mega'));
+let flexSettled = true;
+const flexActive = () => finePointer && mouse.moved && heroTitle._vis && !(flexSettled && performance.now() - mouse.t > 100);
+// lecture groupée des positions (une seule mise en page par image)
+const readFlex = () => {
   const hr = heroTitle.getBoundingClientRect();
-  if (hr.bottom < 0 || hr.top > innerHeight) return;
-  const reach = Math.max(260, hr.height * 0.6);
+  if (hr.bottom < 0 || hr.top > innerHeight) return 0;
   flexChars.forEach((c) => {
     const r = c.el.getBoundingClientRect();
-    const d = Math.hypot(mouse.x - (r.left + r.width / 2), mouse.y - (r.top + r.height / 2));
+    c.cx = r.left + r.width / 2; c.cy = r.top + r.height / 2;
+  });
+  return Math.max(260, hr.height * 0.6);
+};
+const writeFlex = (reach) => {
+  let moving = false;
+  flexChars.forEach((c) => {
+    const d = Math.hypot(mouse.x - c.cx, mouse.y - c.cy);
     const t = Math.max(0, 1 - d / reach);
     const ease = t * t * (3 - 2 * t);
-    c.w += (62 + ease * 26 - c.w) * 0.12;
-    c.g += (800 + ease * 100 - c.g) * 0.12;
+    const tw = 62 + ease * 26, tg = 800 + ease * 100;
+    if (Math.abs(tw - c.w) < 0.05 && Math.abs(tg - c.g) < 0.5) return;
+    moving = true;
+    c.w += (tw - c.w) * 0.12;
+    c.g += (tg - c.g) * 0.12;
     c.el.style.fontVariationSettings = `"wdth" ${c.w.toFixed(1)}, "wght" ${c.g.toFixed(0)}`;
   });
+  flexSettled = !moving;
 };
 
 // 2. Mot en contour qui se remplit au défilement
-const fillTexts = [...document.querySelectorAll('.fill-text')];
-const updateFill = () => {
-  fillTexts.forEach((el) => {
-    const r = el.getBoundingClientRect();
-    const p = (innerHeight * 0.9 - r.top) / (innerHeight * 0.5);
-    el.style.setProperty('--fill', `${(Math.max(0, Math.min(1, p)) * 100).toFixed(1)}%`);
-  });
+const fillTexts = [...document.querySelectorAll('.fill-text')].map((el) => ({ el: watch(el), v: '' }));
+const writeFill = (f, top) => {
+  const p = (innerHeight * 0.9 - top) / (innerHeight * 0.5);
+  const v = `${(Math.max(0, Math.min(1, p)) * 100).toFixed(1)}%`;
+  if (v !== f.v) { f.v = v; f.el.style.setProperty('--fill', v); }
 };
 
 // 3. Lettres brouillées qui se remettent en place
@@ -324,34 +389,84 @@ if (!reducedMotion) {
   });
 }
 
-/* ---------- Boucle : fond, phrase et bandeau ---------- */
-const track = document.querySelector('.marquee-track');
-let marqueeX = 0, velocity = 0, prevScroll = scrollY;
+/* ---------- Boucle : fond, phrase et bandeau ----------
+   Chaque image : d'abord toutes les lectures (positions), puis toutes les écritures,
+   pour éviter les mises en page forcées en cascade. */
+const track = watch(document.querySelector('.marquee-track'));
+watch(statement);
+let marqueeX = 0, velocity = 0, prevScroll = scrollY, marqueeHalf = 0, lastLit = -1;
+const fTrack = watch(document.querySelector('.footer-marquee-track'));
+let fX = 0, fHalf = 0, fDir = -1;
+const readMarquee = () => { marqueeHalf = track.scrollWidth / 2; fHalf = fTrack.scrollWidth / 2; };
+readMarquee();
+addEventListener('resize', readMarquee);
+document.fonts?.ready.then(() => { readMarquee(); readHofCols(); });
+
+// surveillance de la cadence : bascule en mode allégé si trop d'images sont lentes
+let lastTime = 0, samples = 0, slow = 0;
+const monitor = (time) => {
+  const dt = time - lastTime;
+  lastTime = time;
+  if (lite || dt <= 0 || dt > 250) return; // onglet en arrière-plan : on ignore
+  samples++;
+  if (dt > 24) slow++;
+  if (samples >= 120) {
+    if (slow > 45) setLite();
+    samples = slow = 0;
+  }
+};
 
 const frame = (time) => {
-  const r = statement.getBoundingClientRect();
-  const progress = (innerHeight * 0.85 - r.top) / (r.height + innerHeight * 0.35);
-  const lit = Math.floor(Math.max(0, Math.min(1, progress)) * words.length);
-  words.forEach((w, i) => w.classList.toggle('on', i < lit));
-
-  const delta = scrollY - prevScroll;
-  prevScroll = scrollY;
-  velocity += (delta - velocity) * 0.1;
-  marqueeX -= 1.2 + Math.abs(velocity) * 0.6;
-  const half = track.scrollWidth / 2;
-  if (-marqueeX >= half) marqueeX += half;
-  track.style.transform = `translate3d(${marqueeX}px,0,0)`;
-
-  bg.draw(time);
-  updateRows();
-  updateFlex();
-  updateFill();
   requestAnimationFrame(frame);
+  monitor(time);
+  if (dialog.open) return; // la page est masquée par la fiche projet : inutile d'animer
+
+  // --- lectures ---
+  const sr = statement._vis ? statement.getBoundingClientRect() : null;
+  const hr = hofGrid._vis ? hofGrid.getBoundingClientRect() : null;
+  const reach = flexActive() ? readFlex() : 0;
+  const fillTops = fillTexts.map((f) => (f.el._vis ? f.el.getBoundingClientRect().top : null));
+  const footerTop = footer.getBoundingClientRect().top;
+  const y = scrollY;
+
+  // --- écritures ---
+  if (sr) {
+    const progress = (innerHeight * 0.85 - sr.top) / (sr.height + innerHeight * 0.35);
+    const lit = Math.floor(Math.max(0, Math.min(1, progress)) * words.length);
+    if (lit !== lastLit) {
+      words.forEach((w, i) => w.classList.toggle('on', i < lit));
+      lastLit = lit;
+    }
+  }
+
+  const delta = y - prevScroll;
+  prevScroll = y;
+  velocity += (delta - velocity) * 0.1;
+  if (track._vis && marqueeHalf) {
+    marqueeX -= 1.2 + Math.abs(velocity) * 0.6;
+    if (-marqueeX >= marqueeHalf) marqueeX += marqueeHalf;
+    track.style.transform = `translate3d(${marqueeX.toFixed(1)}px,0,0)`;
+  }
+
+  // bande du pied de page : vers la gauche en descendant, vers la droite en remontant
+  if (delta > 0.5) fDir = -1; else if (delta < -0.5) fDir = 1;
+  if (fTrack._vis && fHalf) {
+    fX += fDir * (0.9 + Math.min(Math.abs(velocity), 60) * 0.5);
+    if (fX <= -fHalf) fX += fHalf; else if (fX > 0) fX -= fHalf;
+    fTrack.style.transform = `translate3d(${fX.toFixed(1)}px,0,0)`;
+  }
+
+  if (hr) updateRows(hr);
+  if (reach) writeFlex(reach);
+  fillTexts.forEach((f, i) => { if (fillTops[i] !== null) writeFill(f, fillTops[i]); });
+
+  // le fond n'est redessiné que s'il est visible (le pied de page opaque le recouvre en bas)
+  if (footerTop > 0) bg.draw(time);
 };
 if (reducedMotion) {
   words.forEach((w) => w.classList.add('on'));
   bg.draw(0);
-  fillTexts.forEach((el) => el.style.setProperty('--fill', '100%'));
+  fillTexts.forEach((f) => f.el.style.setProperty('--fill', '100%'));
 } else {
   requestAnimationFrame(frame);
 }
@@ -364,6 +479,7 @@ addEventListener('pointermove', (e) => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.moved = true;
+  mouse.t = performance.now();
 }, { passive: true });
 
 if (finePointer && !reducedMotion) {
